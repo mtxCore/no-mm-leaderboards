@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "hide_leaderboards",
+  "version": "${version}",
+  "name": "Hide Minimega Leaderboards",
+  "description": "Hides the Minimega leaderboards from the main menu.",
+  "authors": [],
+  "contact": {},
+  "license": "GPL-3.0",
+  "icon": "assets/hide_leaderboards/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-datagen": [
+      "com.mtxCore.hide_leaderboards.client.Hide_leaderboardsDataGenerator"
+    ],
+    "client": [
+      "com.mtxCore.hide_leaderboards.client.Hide_leaderboardsClient"
+    ],
+    "main": [
+      "com.mtxCore.hide_leaderboards.Hide_leaderboards"
+    ]
+  },
+  "mixins": [
+    "hide_leaderboards.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}",
+    "legacy": "*",
+    "minimega": "*"
+  }
+}
+
+
