@@ -1,136 +1,140 @@
-plugins {
-    id 'fabric-loom' version '1.15-SNAPSHOT'
-    id 'maven-publish'
+buildscript {
+    repositories {
+        maven { url = uri("https://maven.fabricmc.net/") }
+    }
+    dependencies {
+        classpath "net.fabricmc:fabric-loom:1.17.19"
+    }
 }
 
-version = project.mod_version
-group = project.maven_group
+plugins {
+    id "maven-publish"
+}
+
+def versions = [
+    "1.21.10": [
+        loader:    "0.19.3",
+        fabricApi: "0.138.4+1.21.10",
+        java:      21
+    ],
+    "26.1.2": [
+        loader:        "0.19.3",
+        fabricApi:     "0.155.2+26.1.2",
+        java:          25,
+        nonObfuscated: true
+    ],
+    "26.2": [
+        loader:        "0.19.3",
+        fabricApi:     "0.157.0+26.2",
+        java:          25,
+        nonObfuscated: true
+    ]
+]
+
+def targetMc = findProperty("mc") ?: gradle.ext.defaultMc
+if (!versions.containsKey(targetMc)) {
+    throw new GradleException(
+        "Unsupported MC version '${targetMc}'. Valid options: ${versions.keySet().sort().join(', ')}"
+    )
+}
+
+def v = versions[targetMc]
+def isNonObfuscated = v.nonObfuscated ?: false
+apply plugin: isNonObfuscated ? "net.fabricmc.fabric-loom" : "net.fabricmc.fabric-loom-remap"
+
+group = "com.mtxcore"
+version = "${mod_version}+mc${targetMc}"
 
 base {
-    archivesName = project.archives_base_name
-}
-
-
-fabricApi {
-    configureDataGeneration {
-        client = true
-    }
+    archivesName = "hide-minimega-leaderboards"
 }
 
 repositories {
-    // Add repositories for dependencies here.
     mavenCentral()
-    maven { url "https://maven.neoforged.net/releases/" }
-
-    maven {
-        url "https://jm.gserv.me/repository/maven-public/"
-    }
-    maven {
-        url "https://maven.isxander.dev/releases"
-    }
-    maven {
-        url "https://www.cursemaven.com"
-    }
-    maven {
-        name = 'Kyubion Mod Resources'
-        url "https://raw.githubusercontent.com/Kyubion-Studios/Mod-Resources/main/maven/"
-    }
-
-    exclusiveContent {
-        forRepository {
-            maven {
-                name = "Modrinth"
-                url = "https://api.modrinth.com/maven"
-            }
-        }
-        filter {
-            includeGroup "maven.modrinth"
-        }
-    }
-    maven { url "https://jitpack.io" }
-
-    maven {
-        name = "Terraformers"
-        url = "https://maven.terraformersmc.com/"
-    }
-
-    maven{url = "https://maven.su5ed.dev/releases"}
+    maven { url = "https://maven.fabricmc.net/" }
 }
 
+def modConfig = isNonObfuscated ? "implementation" : "modImplementation"
+
 dependencies {
-    // To change the versions see the gradle.properties file
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    minecraft "com.mojang:minecraft:${targetMc}"
+    if (!isNonObfuscated) {
+        mappings loom.officialMojangMappings()
+    }
 
-    // Add legacy4j
-    modApi "wily.factory_api:factory_api-fabric:${project.minecraft_version}-2.2.7"
-    modImplementation "wily.legacy:legacy-fabric:${project.minecraft_version}-1.8.7"
-
-    // Add minimega
-    modImplementation "maven.modrinth:minimega:0.0.1-alpha.19.4"
-
-    include(implementation("io.github.llamalad7:mixinextras-fabric:0.4.1"))
-    annotationProcessor("io.github.llamalad7:mixinextras-fabric:0.4.1")
-
+    "${modConfig}" "net.fabricmc:fabric-loader:${v.loader}"
+    "${modConfig}" "net.fabricmc.fabric-api:fabric-api:${v.fabricApi}"
 }
 
 processResources {
     inputs.property "version", project.version
-    inputs.property "minecraft_version", project.minecraft_version
-    inputs.property "loader_version", project.loader_version
-    filteringCharset "UTF-8"
+    inputs.property "minecraft_version", targetMc
+    inputs.property "loader_version", v.loader
 
     filesMatching("fabric.mod.json") {
-        expand "version": project.version,
-                "minecraft_version": project.minecraft_version,
-                "loader_version": project.loader_version
-    }
-}
-
-def targetJavaVersion = 21
-tasks.withType(JavaCompile).configureEach {
-    // ensure that the encoding is set to UTF-8, no matter what the system default is
-    // this fixes some edge cases with special characters not displaying correctly
-    // see http://yodaconditions.net/blog/fix-for-java-file-encoding-problems-with-gradle.html
-    // If Javadoc is generated, this must be specified in that task too.
-    it.options.encoding = "UTF-8"
-    if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
-        it.options.release.set(targetJavaVersion)
+        expand(
+            version: project.version,
+            minecraft_version: targetMc,
+            loader_version: v.loader
+        )
     }
 }
 
 java {
-    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
-    if (JavaVersion.current() < javaVersion) {
-        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-    }
-    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-    // if it is present.
-    // If you remove this line, sources will not be generated.
+    toolchain.languageVersion = JavaLanguageVersion.of(v.java)
     withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = v.java
 }
 
 jar {
     from("LICENSE") {
-        rename { "${it}_${project.archives_base_name}" }
+        rename { "${it}_${base.archivesName.get()}" }
     }
 }
 
-// configure the maven publication
-publishing {
-    publications {
-        create("mavenJava", MavenPublication) {
-            artifactId = project.archives_base_name
-            from components.java
+tasks.register("buildAll") {
+    group = "build"
+    description = "Builds every supported Re-Console version."
+
+    def execOps = services.get(org.gradle.process.ExecOperations)
+
+    doLast {
+        def failures = []
+        def isWindows = System.properties["os.name"].toLowerCase().contains("win")
+        def gradleCmd = isWindows ? "gradlew.bat" : "./gradlew"
+
+        versions.keySet().sort().each { mc ->
+            println "\n========== Building for MC ${mc} =========="
+            def javaHome = findProperty("java${versions[mc].java}Home")
+                ?: System.getenv("JAVA${versions[mc].java}_HOME")
+            def command = [gradleCmd, "build", "-Pmc=${mc}", "--console=plain"]
+            if (javaHome) {
+                command += "-Dorg.gradle.java.home=${javaHome}"
+            }
+            def result = execOps.exec {
+                commandLine command
+                ignoreExitValue = true
+            }
+            if (result.exitValue != 0) {
+                failures << mc
+            }
+        }
+
+        if (failures) {
+            throw new GradleException("buildAll failed for: ${failures.join(', ')}")
         }
     }
+}
 
-    // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-    repositories {
-        // Add repositories to publish to here.
-        // Notice: This block does NOT have the same function as the block in the top level.
-        // The repositories here will be used for publishing your artifact, not for
-        // retrieving dependencies.
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = base.archivesName.get()
+        }
     }
 }
